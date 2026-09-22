@@ -1,0 +1,424 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Car Wash AI Chatbot Simulator</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- React & ReactDOM CDN -->
+    <script src="https://unpkg.com/react@18/umd/react.development.js" crossorigin></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js" crossorigin></script>
+    <!-- Babel CDN for JSX -->
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <!-- Google Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body { font-family: 'Inter', sans-serif; }
+        .chat-scroll::-webkit-scrollbar { width: 6px; }
+        .chat-scroll::-webkit-scrollbar-thumb { background-color: #CBD5E1; border-radius: 3px; }
+    </style>
+</head>
+<body class="bg-slate-100 text-slate-800 antialiased h-screen w-screen overflow-hidden">
+    <div id="root" class="h-full w-full"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect, useRef } = React;
+
+        // Default Business Configuration Variables
+        const initialConfig = {
+            BUSINESS_NAME: "Sparkle Auto Spa",
+            LOCATION: "Plot 42, Commercial Avenue, Phase 5, DHA, Lahore",
+            GOOGLE_MAPS_LINK: "https://maps.google.com/?q=SparkleAutoSpa",
+            BUSINESS_PHONE: "+92 300 1234567",
+            WHATSAPP_NUMBER: "+92 300 1234567",
+            WEBSITE_URL: "https://sparkleautospa.com",
+            OPENING_HOURS: "Monday - Sunday: 9:00 AM - 10:00 PM",
+            APPOINTMENT_POLICY: "Walk-ins welcome, prior appointment guarantees zero wait time.",
+            CANCELLATION_POLICY: "Free cancellation up to 2 hours before appointment time.",
+            ACTIVE_PROMOTIONS: "15% OFF on Premium Detailing every Tuesday & Wednesday!",
+            STAFF_CONTACT_METHOD: "WhatsApp / Call +92 300 1234567",
+            STANDARD_WASH_PRICE: "PKR 1,500 (Sedan) / PKR 2,000 (SUV)",
+            STANDARD_WASH_TIME: "30 - 40 Mins",
+            PREMIUM_DETAILING_PRICE: "PKR 12,000 (Sedan) / PKR 15,000 (SUV)",
+            PREMIUM_DETAILING_TIME: "4 - 5 Hours",
+            INTERIOR_CLEANING_PRICE: "PKR 4,500",
+            INTERIOR_CLEANING_TIME: "1.5 - 2 Hours",
+            POLISH_WAX_PRICE: "PKR 6,000",
+            POLISH_WAX_TIME: "2 Hours",
+            STEAM_WASH_PRICE: "PKR 3,000",
+            STEAM_WASH_TIME: "1 Hour",
+            PAYMENT_METHODS: "Cash, JazzCash, EasyPaisa, Debit/Credit Card on-site",
+            PAYMENT_TIMING: "Pay after service completion",
+            DEPOSIT_REQUIREMENT: "No advance deposit required"
+        };
+
+        function App() {
+            const [config] = useState(initialConfig);
+            const [customApiKey, setCustomApiKey] = useState('');
+            const [apiStatus, setApiStatus] = useState('Gemini 3 Flash Ready');
+            const [isApiModalOpen, setIsApiModalOpen] = useState(false);
+            const [messages, setMessages] = useState([
+                {
+                    id: 1,
+                    sender: 'bot',
+                    text: `Hello! 👋 Welcome to **${initialConfig.BUSINESS_NAME}**. \nHow can I help you care for your vehicle today?`,
+                    timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+                }
+            ]);
+            const [input, setInput] = useState('');
+            const [isTyping, setIsTyping] = useState(false);
+
+            const chatEndRef = useRef(null);
+
+            const handleResetChat = () => {
+                setMessages([
+                    {
+                        id: Date.now(),
+                        sender: 'bot',
+                        text: `Hello! 👋 Welcome to **${config.BUSINESS_NAME}**.\nHow can I help you care for your vehicle today?`,
+                        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+                    }
+                ]);
+            };
+
+            const buildSystemPrompt = (cfg) => {
+                return `YOU ARE AN AI CUSTOMER SERVICE AGENT FOR ${cfg.BUSINESS_NAME}.
+BUSINESS LOCATION: ${cfg.LOCATION}
+HOURS: ${cfg.OPENING_HOURS}
+PHONE: ${cfg.BUSINESS_PHONE}
+WHATSAPP: ${cfg.WHATSAPP_NUMBER}
+MAPS: ${cfg.GOOGLE_MAPS_LINK}
+
+SERVICES & PRICING:
+- Standard Wash: ${cfg.STANDARD_WASH_PRICE} (${cfg.STANDARD_WASH_TIME})
+- Premium Detailing: ${cfg.PREMIUM_DETAILING_PRICE} (${cfg.PREMIUM_DETAILING_TIME})
+- Interior Cleaning: ${cfg.INTERIOR_CLEANING_PRICE} (${cfg.INTERIOR_CLEANING_TIME})
+- Polish & Wax: ${cfg.POLISH_WAX_PRICE} (${cfg.POLISH_WAX_TIME})
+- Steam Wash: ${cfg.STEAM_WASH_PRICE} (${cfg.STEAM_WASH_TIME})
+
+POLICIES:
+- Cancellation: ${cfg.CANCELLATION_POLICY}
+- Payment Methods: ${cfg.PAYMENT_METHODS} (${cfg.PAYMENT_TIMING})
+- Active Promotions: ${cfg.ACTIVE_PROMOTIONS}
+
+RULES:
+1. Support English, Urdu, Roman Urdu, and Code-Switching. Match user's language.
+2. HIGHEST PRIORITY: NEVER HALLUCINATE OR INVENT PRICING OR DETAILS. If unknown, direct to staff (${cfg.STAFF_CONTACT_METHOD}).
+3. Always collect booking details (Name, Phone, Car Model, Date, Time, Service) and keep status as PENDING. Never claim confirmed unless explicitly verified.
+4. Keep responses concise, friendly, and end with a clear CTA.`;
+            };
+
+            const promptText = buildSystemPrompt(config);
+
+            useEffect(() => {
+                chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+            }, [messages, isTyping]);
+
+            const generateFallbackResponse = (userText) => {
+                const lower = userText.toLowerCase();
+                let response = "";
+                let detectedLang = "English";
+
+                if (/(kitny|kitne|hai|kia|kya|btao|bata|karna|hmaray|hamaare|shukriya|bohot)/.test(lower)) {
+                    detectedLang = "Roman Urdu";
+                } else if (/[\u0600-\u06FF]/.test(userText)) {
+                    detectedLang = "Urdu";
+                }
+
+                if (lower.includes("price") || lower.includes("cost") || lower.includes("kitny") || lower.includes("rate") || lower.includes("kitne")) {
+                    response = `Bilkul! Hamare packages ki details yeh hain:\n\n` +
+                    `• **Standard Wash:** ${config.STANDARD_WASH_PRICE} (${config.STANDARD_WASH_TIME})\n` +
+                    `• **Premium Detailing:** ${config.PREMIUM_DETAILING_PRICE} (${config.PREMIUM_DETAILING_TIME})\n` +
+                    `• **Interior Cleaning:** ${config.INTERIOR_CLEANING_PRICE}\n\n` +
+                    `Aap ki car ka make aur model kya hai taakay main exact package suggest kar sakoon?`;
+                } else if (lower.includes("best") || lower.includes("recommend") || lower.includes("suv") || lower.includes("prado")) {
+                    response = `For a deep clean, I highly recommend our **Premium Detailing** package (${config.PREMIUM_DETAILING_PRICE}). Would you like to check available slots?`;
+                } else if (lower.includes("book") || lower.includes("appointment") || lower.includes("slot")) {
+                    response = `I would be happy to help you schedule an appointment! 🚗\n\nPlease share your Name, Phone Number, Vehicle Model, Preferred Service, Date & Time.`;
+                } else if (lower.includes("location") || lower.includes("where") || lower.includes("kahan")) {
+                    response = `Hamari location yeh hai:\n📍 ${config.LOCATION}\n\nGoogle Maps Link: ${config.GOOGLE_MAPS_LINK}\n\nKya aap booking schedule karna chahein ge?`;
+                } else {
+                    response = `Thank you for reaching out to **${config.BUSINESS_NAME}**!\n\nHow can I assist you with your vehicle today?`;
+                }
+
+                return { response, detectedLang };
+            };
+
+            const fetchGeminiResponse = async (userMessage, chatHistory) => {
+                const apiKey = customApiKey.trim();
+                const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent?key=${apiKey}`;
+
+                const apiHistory = chatHistory
+                    .filter(m => m.sender === 'user' || m.sender === 'bot')
+                    .map(m => ({
+                        role: m.sender === 'user' ? 'user' : 'model',
+                        parts: [{ text: m.text }]
+                    }));
+
+                apiHistory.push({
+                    role: 'user',
+                    parts: [{ text: userMessage }]
+                });
+
+                const payload = {
+                    contents: apiHistory,
+                    systemInstruction: {
+                        parts: [{ text: promptText }]
+                    }
+                };
+
+                let retries = 0;
+                let delay = 1000;
+
+                while (retries < 3) {
+                    try {
+                        const res = await fetch(apiUrl, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify(payload)
+                        });
+
+                        if (!res.ok) throw new Error(`API Error ${res.status}`);
+
+                        const data = await res.json();
+                        const botReply = data?.candidates?.[0]?.content?.parts?.[0]?.text;
+
+                        if (botReply) {
+                            setApiStatus('Connected (Gemini 3 Flash)');
+                            return { text: botReply, lang: 'Gemini Live AI' };
+                        }
+                        throw new Error("Empty candidate response");
+                    } catch (err) {
+                        retries++;
+                        if (retries >= 3) {
+                            console.warn("Gemini API call failed, using rule fallback", err);
+                            setApiStatus('Offline (Fallback Engine)');
+                            const fallback = generateFallbackResponse(userMessage);
+                            return { text: fallback.response, lang: `${fallback.detectedLang} (Simulated Fallback)` };
+                        }
+                        await new Promise(res => setTimeout(res, delay));
+                        delay *= 2;
+                    }
+                }
+            };
+
+            const handleSend = async (textToSend = input) => {
+                if (!textToSend.trim()) return;
+
+                const userMsg = {
+                    id: Date.now(),
+                    sender: 'user',
+                    text: textToSend,
+                    timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+                };
+
+                setMessages(prev => [...prev, userMsg]);
+                setInput('');
+                setIsTyping(true);
+
+                const aiReply = await fetchGeminiResponse(textToSend, messages);
+
+                const botMsg = {
+                    id: Date.now() + 1,
+                    sender: 'bot',
+                    text: aiReply.text,
+                    timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+                    lang: aiReply.lang
+                };
+
+                setMessages(prev => [...prev, botMsg]);
+                setIsTyping(false);
+            };
+
+            return (
+                <div className="w-full h-screen flex flex-col bg-slate-900 text-slate-100 relative">
+                    
+                    {/* Top Header Bar */}
+                    <header className="bg-slate-800 border-b border-slate-700 px-4 py-3 flex items-center justify-between shadow-md z-10 flex-shrink-0">
+                        <div className="flex items-center space-x-3">
+                            <div className="relative">
+                                <div className="w-10 h-10 rounded-full bg-blue-600 flex items-center justify-center font-bold text-lg shadow-sm">
+                                    🚗
+                                </div>
+                                <span className="absolute bottom-0 right-0 w-3 h-3 bg-emerald-400 border-2 border-slate-800 rounded-full"></span>
+                            </div>
+                            <div>
+                                <h1 className="font-bold text-base md:text-lg text-white leading-tight">{config.BUSINESS_NAME} AI Assistant</h1>
+                                <p className="text-xs text-blue-400 flex items-center gap-1.5">
+                                    <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+                                    <span>{apiStatus}</span>
+                                </p>
+                            </div>
+                        </div>
+
+                        <div className="flex items-center space-x-2">
+                            {/* API Key Modal Toggle Button */}
+                            <button 
+                                onClick={() => setIsApiModalOpen(true)}
+                                className="flex items-center space-x-1.5 bg-slate-700 hover:bg-slate-600 text-slate-200 px-3.5 py-2 rounded-xl text-xs font-medium border border-slate-600 transition shadow-sm"
+                            >
+                                <span>🔑</span>
+                                <span className="hidden sm:inline">API Key</span>
+                            </button>
+
+                            {/* Reset Chat Button */}
+                            <button 
+                                onClick={handleResetChat}
+                                className="bg-red-500/20 hover:bg-red-500/30 text-red-300 border border-red-500/30 px-3.5 py-2 rounded-xl text-xs font-medium transition"
+                            >
+                                Reset Chat
+                            </button>
+                        </div>
+                    </header>
+
+                    {/* Main Messages Container */}
+                    <main className="flex-1 overflow-y-auto chat-scroll p-4 md:p-6 space-y-4 bg-slate-950/60">
+                        <div className="max-w-4xl mx-auto space-y-4">
+                            {messages.map((msg) => (
+                                <div 
+                                    key={msg.id}
+                                    className={`flex ${msg.sender === 'user' ? 'justify-end' : 'justify-start'}`}
+                                >
+                                    <div className={`max-w-[88%] md:max-w-[75%] rounded-2xl p-4 text-sm shadow-md transition-all ${
+                                        msg.sender === 'user' 
+                                            ? 'bg-blue-600 text-white rounded-br-none' 
+                                            : 'bg-slate-800 border border-slate-700 text-slate-100 rounded-bl-none'
+                                    }`}>
+                                        {msg.sender === 'bot' && (
+                                            <div className="flex items-center justify-between border-b border-slate-700/60 pb-1.5 mb-2 text-[10px] text-slate-400">
+                                                <span className="font-bold text-blue-400 tracking-wider">AI AGENT</span>
+                                                {msg.lang && <span className="bg-slate-700/70 text-slate-300 px-2 py-0.5 rounded-full">{msg.lang}</span>}
+                                            </div>
+                                        )}
+                                        <div className="whitespace-pre-line leading-relaxed">{msg.text}</div>
+                                        <div className={`text-[10px] mt-2 text-right ${msg.sender === 'user' ? 'text-blue-200' : 'text-slate-400'}`}>
+                                            {msg.timestamp}
+                                        </div>
+                                    </div>
+                                </div>
+                            ))}
+
+                            {isTyping && (
+                                <div className="flex justify-start">
+                                    <div className="bg-slate-800 border border-slate-700 rounded-2xl rounded-bl-none p-4 shadow-sm flex items-center space-x-2">
+                                        <div className="w-2 h-2 bg-blue-400 rounded-full animate-bounce"></div>
+                                        <div className="w-2 h-2 bg-blue-400 rounded-full animate-bounce [animation-delay:0.2s]"></div>
+                                        <div className="w-2 h-2 bg-blue-400 rounded-full animate-bounce [animation-delay:0.4s]"></div>
+                                    </div>
+                                </div>
+                            )}
+                            <div ref={chatEndRef} />
+                        </div>
+                    </main>
+
+                    {/* Preset Suggestion Chips */}
+                    <div className="bg-slate-900 border-t border-slate-800 px-4 py-2 flex items-center space-x-2 overflow-x-auto no-scrollbar max-w-4xl mx-auto w-full">
+                        <span className="text-[11px] text-slate-400 font-medium whitespace-nowrap">Try asking:</span>
+                        <button 
+                            onClick={() => handleSend("Car wash kitny ka hai?")}
+                            className="bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 text-xs px-3 py-1 rounded-full whitespace-nowrap transition"
+                        >
+                            "Car wash kitny ka hai?"
+                        </button>
+                        <button 
+                            onClick={() => handleSend("Which service is best for SUV?")}
+                            className="bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 text-xs px-3 py-1 rounded-full whitespace-nowrap transition"
+                        >
+                            "Which package for SUV?"
+                        </button>
+                        <button 
+                            onClick={() => handleSend("I want to book an appointment.")}
+                            className="bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 text-xs px-3 py-1 rounded-full whitespace-nowrap transition"
+                        >
+                            "Book appointment"
+                        </button>
+                        <button 
+                            onClick={() => handleSend("Where are you located?")}
+                            className="bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 text-xs px-3 py-1 rounded-full whitespace-nowrap transition"
+                        >
+                            "Location"
+                        </button>
+                    </div>
+
+                    {/* Bottom Message Input Field */}
+                    <footer className="p-3 md:p-4 bg-slate-800 border-t border-slate-700 flex-shrink-0">
+                        <div className="max-w-4xl mx-auto flex items-center space-x-2">
+                            <input 
+                                type="text"
+                                value={input}
+                                onChange={(e) => setInput(e.target.value)}
+                                onKeyDown={(e) => e.key === 'Enter' && handleSend()}
+                                placeholder="Type a message (English, Urdu, or Roman Urdu)..."
+                                className="flex-1 bg-slate-900 border border-slate-700 text-slate-100 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent placeholder-slate-500"
+                            />
+                            <button 
+                                onClick={() => handleSend()}
+                                className="bg-blue-600 hover:bg-blue-500 text-white font-medium px-5 py-3 rounded-xl text-sm transition flex items-center justify-center shadow-lg"
+                            >
+                                Send
+                            </button>
+                        </div>
+                    </footer>
+
+                    {/* API Key Side Modal Overlay */}
+                    {isApiModalOpen && (
+                        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex justify-end transition-opacity">
+                            <div className="w-full max-w-md bg-slate-800 text-slate-100 h-full p-6 shadow-2xl flex flex-col justify-between border-l border-slate-700 animate-in slide-in-from-right duration-200">
+                                <div className="space-y-6">
+                                    <div className="flex items-center justify-between border-b border-slate-700 pb-4">
+                                        <h2 className="text-lg font-bold flex items-center gap-2">
+                                            <span>🔑</span>
+                                            <span>API Settings</span>
+                                        </h2>
+                                        <button 
+                                            onClick={() => setIsApiModalOpen(false)}
+                                            className="text-slate-400 hover:text-white text-xl p-1 rounded-lg hover:bg-slate-700"
+                                        >
+                                            ✕
+                                        </button>
+                                    </div>
+
+                                    <div className="p-4 bg-slate-900 border border-blue-500/30 rounded-xl space-y-3">
+                                        <label className="block text-blue-400 font-bold text-xs uppercase tracking-wider">
+                                            Gemini API Key
+                                        </label>
+                                        <input 
+                                            type="password"
+                                            value={customApiKey}
+                                            onChange={(e) => setCustomApiKey(e.target.value)}
+                                            placeholder="Enter your Gemini API Key..."
+                                            className="w-full p-3 bg-slate-800 border border-slate-600 rounded-lg text-xs focus:ring-2 focus:ring-blue-500 focus:outline-none text-white placeholder-slate-500"
+                                        />
+                                        <p className="text-[11px] text-slate-400 leading-relaxed">
+                                            Aap apni custom Gemini API Key enter kar sakte hain. Jab key blank chhorein ge to runtime auto-key connect rahe gi.
+                                        </p>
+                                    </div>
+
+                                    <div className="p-4 bg-slate-900 border border-slate-700 rounded-xl space-y-2">
+                                        <h3 className="text-xs font-semibold uppercase text-slate-400 tracking-wider">Connection Details</h3>
+                                        <div className="flex items-center justify-between text-xs p-2.5 bg-slate-800 rounded-lg">
+                                            <span className="text-slate-300">Model Engine</span>
+                                            <span className="font-bold text-emerald-400">{apiStatus}</span>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <button 
+                                    onClick={() => setIsApiModalOpen(false)}
+                                    className="w-full bg-blue-600 hover:bg-blue-500 text-white font-semibold py-3 rounded-xl text-sm transition"
+                                >
+                                    Save & Close
+                                </button>
+                            </div>
+                        </div>
+                    )}
+
+                </div>
+            );
+        }
+
+        ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+    </script>
+</body>
+</html>
